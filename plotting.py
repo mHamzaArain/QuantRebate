@@ -8,30 +8,42 @@ import asyncio
 import pandas_ta as ta
 from datetime import datetime, timedelta
 import re
+from lightweight_charts.widgets import StreamlitChart
+
 
 class Essential():
     def __init__(self):
         self.exchange=ccxt.binance()
 
     async def ohlc_data_fetch(self, symbol='BTCUSDT', timeframe='5m'):
-        ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe)
+        try:
+            ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe)
 
-        dataframe = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
-        dataframe['time'] = pd.to_datetime(dataframe['time'], unit='ms')
-        # df.set_index('timestamp', inplace=True)
-        return dataframe
+            dataframe = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
+            dataframe['time'] = pd.to_datetime(dataframe['time'], unit='ms')
+            # df.set_index('timestamp', inplace=True)
+            return dataframe
+        except:
+            self.ohlc_data_fetch(symbol=symbol, timeframe=timeframe)
 
     async def current_price_data(self, symbol):
-        data = requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}")  
-        data = data.json()
-        data['time'] = int(time.time())
+        try:
+            data = requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}")  
+            data = data.json()
+            data['time'] = int(time.time())
 
-        dataframe = pd.DataFrame([data])
-        dataframe['price'] = dataframe['price'].astype(float)
-        dataframe['time'] = pd.to_datetime(dataframe['time'], unit='s')
-        dataframe['volume'] = np.nan
-        return dataframe
-    
+            dataframe = pd.DataFrame([data])
+            dataframe['price'] = dataframe['price'].astype(float)
+            dataframe['time'] = pd.to_datetime(dataframe['time'], unit='s')
+            dataframe['volume'] = np.nan
+            return dataframe
+        except:
+            print("this")
+            time.sleep(3)
+            self.current_price_data(symbol=symbol)
+        
+
+
     def check_time_difference(self, current_time, last_time, interval):
         time_difference = current_time - last_time
         # print(time_difference, " ",interval )
@@ -94,13 +106,28 @@ class Essential():
         # 3. Buy condition
         dataframe['buy_screener_conditions_all'] = (dataframe['buy_screener_condition_1'] & dataframe['buy_screener_condition_2'])
         
-        
         return dataframe
+    
+    def calculate_entry_tp_sl(self, buy_size_usd, entry_base_price, stoploss, rr=2.5):
+        # 1. Calculate qty of base aginst quote pair (e.g; BTC/USDT how many qty of BTC we get from 50 USDT.)
+        qty_base_currency = buy_size_usd / entry_base_price
+        
+        # 2. Calculate stoploss
+        ## For now @ 10 ema of last red candle -> 1. Last developed candle is red and completely above 10 ema
+        stoploss_base_price = stoploss
+        
+        # 3. Take Profit
+        ## Takeprofit 1:2.5 RR
+        risk_usd = entry_base_price - stoploss_base_price 
+        reward_usd = risk_usd*rr
+        takeprofit = entry_base_price + reward_usd
+        
+        return qty_base_currency, stoploss_base_price, takeprofit
 
 async def main():
     esn = Essential()
 
-    symbol = 'BNB/USDT'
+    symbol = 'GALA/USDT'
     tick_symbol = symbol.replace("/", "")
     timeframe = '1m'
     
@@ -108,17 +135,22 @@ async def main():
     df = await esn.ohlc_data_fetch(symbol=symbol, timeframe=timeframe)
     last_time = df['time'].iloc[-1]
 
-    ## tick = await esn.current_price_data(tick_symbol)
+    # tick = await esn.current_price_data(tick_symbol)
     chart = Chart(volume_enabled=False)
+    # chart.layout(background_color="rgba(0, 0, 0, 0.07)")
+    # chart.candle_style(down_color="rgba(0, 0, 0, 1)")
     chart.set(df)
     
     df = esn.apply_indicator(df)
     df = esn.buy_screener_condition(df)
+    condition_satisfied_once = True
+    is_bought = False
     # # line = chart.create_line()
 
     # # chart.show()
     await chart.show_async()
-    
+
+
     while True:
         time.sleep(0.1)
         tick = await esn.current_price_data(tick_symbol)
@@ -128,13 +160,35 @@ async def main():
             df = await esn.ohlc_data_fetch(symbol=symbol, timeframe=timeframe)
             df = esn.apply_indicator(df)
             df = esn.buy_screener_condition(df)
-            print(df.tail(3))
+            condition_satisfied_once = True
+            # print(df.tail(3))
+            print(df[['ema10', "red_candle", "buy_screener_condition_1", "buy_screener_condition_2", "buy_screener_conditions_all"]].tail(5))
 
-        tick=tick.iloc[0,:]
+        # print(tick['price'][0])
+        # print(df['ema10'].iloc[-1])
+        # line = chart.create_line()
 
-    #     # if series['close'] > 20 and last_close < 20:
-    #     #     chart.marker(text='The price crossed $20!')
+        
+        # if tick['price'][0] > df['buy_screener_conditions_all'].iloc[-1] and condition_satisfied_once:
+        if df['buy_screener_conditions_all'].iloc[-1] and tick['price'][0] >= df['open'].iloc[-1] and df['low'].iloc[-1] > df['ema10'].iloc[-1] and condition_satisfied_once and is_bought==False:
+            qty, sl, tp = esn.calculate_entry_tp_sl(buy_size_usd=50, entry_base_price=df['open'].iloc[-1], stoploss=df['low'].iloc[-1], rr=2.5)
+            chart.marker(text='buy')
+            is_bought = True
+            condition_satisfied_once = False
+
+            chart.horizontal_line(price=tick['price'][0], color="blue", width=1, style='dotted', text="Entry")
+            chart.horizontal_line(price=tp, color="green", width=2, style='large_dashed', text="TP")
+            chart.horizontal_line(price=sl, color="red", width=2, style='large_dashed', text="SL")
+
+            print("EP: ", tick['price'][0])
+            print("TP: ", tp)
+            print("SL: ", sl)
+
+            img = chart.screenshot()
+            with open('screenshot.png', 'wb') as f:
+                f.write(img)
             
+        tick=tick.iloc[0,:]
     #     # sma_data = calculate_sma(df)
     #     # line.set(sma_data)
     #     # await 
