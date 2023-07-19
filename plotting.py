@@ -8,40 +8,40 @@ import asyncio
 import pandas_ta as ta
 from datetime import datetime, timedelta
 import re
-from lightweight_charts.widgets import StreamlitChart
-
+import sqlite3
 
 class Essential():
     def __init__(self):
         self.exchange=ccxt.binance()
 
     async def ohlc_data_fetch(self, symbol='BTCUSDT', timeframe='5m'):
-        try:
-            ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe)
+        while True:
+            try:
+                ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe)
 
-            dataframe = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
-            dataframe['time'] = pd.to_datetime(dataframe['time'], unit='ms')
-            # df.set_index('timestamp', inplace=True)
-            return dataframe
-        except:
-            self.ohlc_data_fetch(symbol=symbol, timeframe=timeframe)
-
+                dataframe = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
+                dataframe['time'] = pd.to_datetime(dataframe['time'], unit='ms')
+                # df.set_index('timestamp', inplace=True)
+                return dataframe
+            except:
+                time.sleep(3)
+                pass
     async def current_price_data(self, symbol):
-        try:
-            data = requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}")  
-            data = data.json()
-            data['time'] = int(time.time())
+        while True:
+            try:
+                data = requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}")  
+                data = data.json()
+                data['time'] = int(time.time())
 
-            dataframe = pd.DataFrame([data])
-            dataframe['price'] = dataframe['price'].astype(float)
-            dataframe['time'] = pd.to_datetime(dataframe['time'], unit='s')
-            dataframe['volume'] = np.nan
-            return dataframe
-        except:
-            print("this")
-            time.sleep(3)
-            self.current_price_data(symbol=symbol)
-        
+                dataframe = pd.DataFrame([data])
+                dataframe['price'] = dataframe['price'].astype(float)
+                dataframe['time'] = pd.to_datetime(dataframe['time'], unit='s')
+                dataframe['volume'] = np.nan
+                return dataframe
+                
+            except:
+                time.sleep(1)
+                pass
 
 
     def check_time_difference(self, current_time, last_time, interval):
@@ -51,7 +51,6 @@ class Essential():
             return True
         else:
             return False
-    
     
     def remove_non_numeric_chars(self, string):
         return int(re.sub(r'\D', '', string))
@@ -123,14 +122,22 @@ class Essential():
         takeprofit = entry_base_price + reward_usd
         
         return qty_base_currency, stoploss_base_price, takeprofit
+    
+    def to_db(self, dataframe, db_table,  connection):
+        dataframe.to_sql(db_table, connection, if_exists='append', index=False)
+
 
 async def main():
     esn = Essential()
+    symbol = 'XRP/USDT'
 
-    symbol = 'GALA/USDT'
     tick_symbol = symbol.replace("/", "")
-    timeframe = '1m'
-    
+    timeframe = '5m'
+    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    conn_ohlc = sqlite3.connect(f'data/{tick_symbol}_{timeframe}_ohlc.db')
+    conn_tick = sqlite3.connect(f'data/{tick_symbol}_{timeframe}_tick.db')
+
     timeframe_interval = esn.remove_non_numeric_chars(timeframe)
     df = await esn.ohlc_data_fetch(symbol=symbol, timeframe=timeframe)
     last_time = df['time'].iloc[-1]
@@ -149,6 +156,7 @@ async def main():
 
     # # chart.show()
     await chart.show_async()
+    df.to_sql('ohlc_data', conn_ohlc, if_exists='append', index=False)
 
 
     while True:
@@ -158,6 +166,13 @@ async def main():
         if esn.check_time_difference(current_time=tick['time'], last_time=last_time, interval=timeframe_interval):
             last_time = tick['time']
             df = await esn.ohlc_data_fetch(symbol=symbol, timeframe=timeframe)
+            try:
+                esn.to_db(dataframe=df, db_table='ohlc_data', connection=conn_ohlc)
+            except:
+                time.sleep(0.3)
+                df = await esn.ohlc_data_fetch(symbol=symbol, timeframe=timeframe)
+                esn.to_db(dataframe=df, db_table='ohlc_data', connection=conn_ohlc)
+
             df = esn.apply_indicator(df)
             df = esn.buy_screener_condition(df)
             condition_satisfied_once = True
@@ -167,11 +182,10 @@ async def main():
         # print(tick['price'][0])
         # print(df['ema10'].iloc[-1])
         # line = chart.create_line()
-
         
         # if tick['price'][0] > df['buy_screener_conditions_all'].iloc[-1] and condition_satisfied_once:
         if df['buy_screener_conditions_all'].iloc[-1] and tick['price'][0] >= df['open'].iloc[-1] and df['low'].iloc[-1] > df['ema10'].iloc[-1] and condition_satisfied_once and is_bought==False:
-            qty, sl, tp = esn.calculate_entry_tp_sl(buy_size_usd=50, entry_base_price=df['open'].iloc[-1], stoploss=df['low'].iloc[-1], rr=2.5)
+            qty, sl, tp = esn.calculate_entry_tp_sl(buy_size_usd=50, entry_base_price=df['low'].iloc[-2], stoploss=df['low'].iloc[-1], rr=2.5)
             chart.marker(text='buy')
             is_bought = True
             condition_satisfied_once = False
@@ -185,9 +199,12 @@ async def main():
             print("SL: ", sl)
 
             img = chart.screenshot()
-            with open('screenshot.png', 'wb') as f:
+            with open(f"data/{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_{timeframe}.png", 'wb') as f:
                 f.write(img)
-            
+        
+        esn.to_db(dataframe=tick, db_table='tick_data', connection=conn_tick)
+
+
         tick=tick.iloc[0,:]
     #     # sma_data = calculate_sma(df)
     #     # line.set(sma_data)
@@ -196,8 +213,6 @@ async def main():
         chart.update_from_tick(tick)            
 
 
-
 if __name__ == '__main__':
     asyncio.run(main())
-    # main()
 
