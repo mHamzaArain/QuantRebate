@@ -152,7 +152,7 @@ async def main():
     df = esn.buy_screener_condition(df)
     condition_satisfied_once = True
     is_bought = False
-    # # line = chart.create_line()
+    line = chart.create_line()
 
     # # chart.show()
     await chart.show_async()
