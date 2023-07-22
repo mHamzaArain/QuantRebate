@@ -126,20 +126,29 @@ class Essential():
     def to_db(self, dataframe, db_table,  connection):
         dataframe.to_sql(db_table, connection, if_exists='append', index=False)
 
+    def calculate_sma(self, data: pd.DataFrame, period: int = 10):
+        def avg(d: pd.DataFrame):
+            return d['close'].mean()
+        result = []
+        for i in range(period - 1, len(data)):
+            val = avg(data.iloc[i - period + 1:i])
+            result.append({'time': data.iloc[i]['time'], f'SMA {period}': val})
+        return pd.DataFrame(result)
+
 
 async def main():
     esn = Essential()
-    symbol = 'XRP/USDT'
+    symbol = 'LINK/USDT'
 
     tick_symbol = symbol.replace("/", "")
     timeframe = '5m'
-    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     conn_ohlc = sqlite3.connect(f'data/{tick_symbol}_{timeframe}_ohlc.db')
     conn_tick = sqlite3.connect(f'data/{tick_symbol}_{timeframe}_tick.db')
 
     timeframe_interval = esn.remove_non_numeric_chars(timeframe)
     df = await esn.ohlc_data_fetch(symbol=symbol, timeframe=timeframe)
+    esn.to_db(dataframe=df, db_table='ohlc_data', connection=conn_tick)
     last_time = df['time'].iloc[-1]
 
     # tick = await esn.current_price_data(tick_symbol)
@@ -152,12 +161,14 @@ async def main():
     df = esn.buy_screener_condition(df)
     condition_satisfied_once = True
     is_bought = False
-    line = chart.create_line()
 
+    line = chart.create_line()
+    sma_data = esn.calculate_sma(df, period=10)
+    line.set(sma_data, name='SMA 10')
+    
+    
     # # chart.show()
     await chart.show_async()
-    df.to_sql('ohlc_data', conn_ohlc, if_exists='append', index=False)
-
 
     while True:
         time.sleep(0.1)
@@ -174,10 +185,12 @@ async def main():
                 esn.to_db(dataframe=df, db_table='ohlc_data', connection=conn_ohlc)
 
             df = esn.apply_indicator(df)
+            sma_data = esn.calculate_sma(df, period=10)
+            line.set(sma_data, name='SMA 10')
             df = esn.buy_screener_condition(df)
             condition_satisfied_once = True
             # print(df.tail(3))
-            print(df[['ema10', "red_candle", "buy_screener_condition_1", "buy_screener_condition_2", "buy_screener_conditions_all"]].tail(5))
+            print(df[["red_candle", "buy_screener_condition_1", "buy_screener_condition_2", "buy_screener_conditions_all"]].tail(5))
 
         # print(tick['price'][0])
         # print(df['ema10'].iloc[-1])
@@ -213,6 +226,5 @@ async def main():
         chart.update_from_tick(tick)            
 
 
-if __name__ == '__main__':
+if __name__=="__main__":
     asyncio.run(main())
-
