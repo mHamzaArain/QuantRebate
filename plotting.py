@@ -138,7 +138,7 @@ class Essential():
 
 async def main():
     esn = Essential()
-    symbol = 'LINK/USDT'
+    symbol = 'LINA/USDT'
 
     tick_symbol = symbol.replace("/", "")
     timeframe = '5m'
@@ -177,12 +177,7 @@ async def main():
         if esn.check_time_difference(current_time=tick['time'], last_time=last_time, interval=timeframe_interval):
             last_time = tick['time']
             df = await esn.ohlc_data_fetch(symbol=symbol, timeframe=timeframe)
-            try:
-                esn.to_db(dataframe=df, db_table='ohlc_data', connection=conn_ohlc)
-            except:
-                time.sleep(0.3)
-                df = await esn.ohlc_data_fetch(symbol=symbol, timeframe=timeframe)
-                esn.to_db(dataframe=df, db_table='ohlc_data', connection=conn_ohlc)
+            esn.to_db(dataframe=df, db_table='ohlc_data', connection=conn_ohlc)
 
             df = esn.apply_indicator(df)
             sma_data = esn.calculate_sma(df, period=10)
