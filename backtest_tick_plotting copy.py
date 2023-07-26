@@ -126,5 +126,5 @@ for i, series in df3.iterrows():
     chart.update_from_tick(series)   
     # sleep(1)
          
-    sleep(0.01)
+    # sleep(0.000001)
 
