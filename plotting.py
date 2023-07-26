@@ -41,12 +41,11 @@ class Essential():
                 
             except:
                 time.sleep(1)
-                pass
+                
 
 
     def check_time_difference(self, current_time, last_time, interval):
         time_difference = current_time - last_time
-        # print(time_difference, " ",interval )
         if (time_difference >= timedelta(minutes=interval))[0]:
             return True
         else:
@@ -138,10 +137,10 @@ class Essential():
 
 async def main():
     esn = Essential()
-    symbol = 'LINA/USDT'
+    symbol = 'DOGE/USDT'
 
     tick_symbol = symbol.replace("/", "")
-    timeframe = '5m'
+    timeframe = '1m'
 
     conn_ohlc = sqlite3.connect(f'data/{tick_symbol}_{timeframe}_ohlc.db')
     conn_tick = sqlite3.connect(f'data/{tick_symbol}_{timeframe}_tick.db')
@@ -173,7 +172,7 @@ async def main():
     while True:
         time.sleep(0.1)
         tick = await esn.current_price_data(tick_symbol)
-        
+
         if esn.check_time_difference(current_time=tick['time'], last_time=last_time, interval=timeframe_interval):
             last_time = tick['time']
             df = await esn.ohlc_data_fetch(symbol=symbol, timeframe=timeframe)
@@ -184,8 +183,9 @@ async def main():
             line.set(sma_data, name='SMA 10')
             df = esn.buy_screener_condition(df)
             condition_satisfied_once = True
+
             # print(df.tail(3))
-            print(df[["red_candle", "buy_screener_condition_1", "buy_screener_condition_2", "buy_screener_conditions_all"]].tail(5))
+            # print(df[["red_candle", "buy_screener_condition_1", "buy_screener_condition_2", "buy_screener_conditions_all"]].tail(5))
 
         # print(tick['price'][0])
         # print(df['ema10'].iloc[-1])
@@ -214,7 +214,7 @@ async def main():
 
 
         tick=tick.iloc[0,:]
-    #     # sma_data = calculate_sma(df)
+    #     # sma_data = calculate_sma(df) 
     #     # line.set(sma_data)
     #     # await 
 
