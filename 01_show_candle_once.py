@@ -31,4 +31,4 @@ if __name__ == '__main__':
 
     ## Chart
     chart.show(block=True)
-    sleep(80)
+
