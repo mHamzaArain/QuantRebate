@@ -25,7 +25,7 @@ class Essential():
                 return dataframe
             except:
                 time.sleep(3)
-                pass
+                
     async def current_price_data(self, symbol):
         while True:
             try:
@@ -212,12 +212,7 @@ async def main():
         
         esn.to_db(dataframe=tick, db_table='tick_data', connection=conn_tick)
 
-
         tick=tick.iloc[0,:]
-    #     # sma_data = calculate_sma(df) 
-    #     # line.set(sma_data)
-    #     # await 
-
         chart.update_from_tick(tick)            
 
 
