@@ -152,13 +152,13 @@ async def main(symbol, timeframe):
 
         tick=tick.iloc[0,:]
         chart.update_from_tick(tick)            
-        time.sleep(0.1)
+        time.sleep(1)
 
 
 
 
 if __name__=="__main__":
-    symbol = "BTC/USDT"
+    symbol = "BNB/USDT"
     timeframe = "1m"
 
     asyncio.run(main(symbol=symbol, timeframe=timeframe))
